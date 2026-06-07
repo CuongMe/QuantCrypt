@@ -12,3 +12,8 @@
 - Added a first-pass architecture diagram that can evolve with the system.
 - Added `.gitignore` rules so local secrets and the virtual environment do not enter git.
 
+### Step 2: Repository Link And Architecture Reset
+
+- Removed the placeholder architecture diagram from `docs/architecture.md`.
+- Kept the architecture file as a living placeholder until real modules exist.
+- Prepared the local repository to connect to the GitHub remote.
