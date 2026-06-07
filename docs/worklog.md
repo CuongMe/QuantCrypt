@@ -17,3 +17,9 @@
 - Removed the placeholder architecture diagram from `docs/architecture.md`.
 - Kept the architecture file as a living placeholder until real modules exist.
 - Prepared the local repository to connect to the GitHub remote.
+
+### Step 3: Supervisor Node Diagram
+
+- Added the first concrete architecture diagram for the `Supervisor Node`.
+- Defined the orchestration flow from analyst agents to researcher debate, trader synthesis, and risk review.
+- Recorded the purpose of each agent role directly in `docs/architecture.md`.
