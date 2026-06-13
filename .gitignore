@@ -3,4 +3,5 @@ __pycache__/
 .pytest_cache/
 .env
 API keys.txt
-
+*.faiss
+*.sqlite3
