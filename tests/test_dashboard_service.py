@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from quantcrypt.ai_engineering.ai_node import AIEngineeringNode
-from quantcrypt.dashboard.service import DashboardMode, RunConfig, build_trading_scope, execute_backtest
+from quantcrypt.dashboard.service import (
+    DashboardMode,
+    RunConfig,
+    build_trading_scope,
+    ensure_backtest_market_data,
+    execute_backtest,
+    required_backtest_candle_count,
+)
 from quantcrypt.data_foundation.models import OHLCVCandle
 from quantcrypt.data_foundation.data_node import DataFoundationNode
 from quantcrypt.data_foundation.storage import SQLiteOHLCVStore
@@ -52,6 +60,103 @@ def _seed_data_foundation(tmp_path: Path) -> tuple[DataFoundationNode, Path]:
     ]
     store.upsert_candles(candles)
     return DataFoundationNode(db_path=db_path, store=store), db_path
+
+
+class _FakeCountStore:
+    def __init__(self, count: int) -> None:
+        self.count = count
+
+    def count_candles(self, *, symbol: str, interval: str) -> int:
+        return self.count
+
+
+class _FakeBackfillDataFoundation:
+    def __init__(self, *, initial_count: int, synced_count: int, should_fail: bool = False) -> None:
+        self.store = _FakeCountStore(initial_count)
+        self.synced_count = synced_count
+        self.should_fail = should_fail
+        self.backfill_requests: list[dict[str, int | str]] = []
+
+    def backfill_rest_klines(
+        self,
+        *,
+        symbol: str,
+        interval: str,
+        start_time_ms: int,
+        end_time_ms: int,
+    ) -> int:
+        self.backfill_requests.append(
+            {
+                "symbol": symbol,
+                "interval": interval,
+                "start_time_ms": start_time_ms,
+                "end_time_ms": end_time_ms,
+            }
+        )
+        if self.should_fail:
+            raise RuntimeError("network unavailable")
+        inserted_count = max(0, self.synced_count - self.store.count)
+        self.store.count = self.synced_count
+        return inserted_count
+
+
+def test_required_backtest_candle_count_accounts_for_requested_cycles() -> None:
+    config = RunConfig(
+        mode=DashboardMode.BACKTEST,
+        symbol="BTCUSDT",
+        interval="1m",
+        lookback_candles=64,
+        backtest_candles=50,
+    )
+
+    assert required_backtest_candle_count(config) == 115
+
+
+def test_ensure_backtest_market_data_bootstraps_empty_store() -> None:
+    monitor = LiveMonitor()
+    data_foundation = _FakeBackfillDataFoundation(initial_count=0, synced_count=220)
+    config = RunConfig(
+        mode=DashboardMode.BACKTEST,
+        symbol="BTCUSDT",
+        interval="1m",
+        lookback_candles=64,
+        backtest_candles=50,
+    )
+
+    available_candles = ensure_backtest_market_data(
+        cast(DataFoundationNode, data_foundation),
+        config=config,
+        monitor=monitor,
+    )
+
+    assert available_candles == 220
+    assert len(data_foundation.backfill_requests) == 1
+    assert any(entry.component_name == "data_sync" and entry.status == "healthy" for entry in monitor.snapshot().component_statuses)
+
+
+def test_ensure_backtest_market_data_records_warning_when_sync_fails() -> None:
+    monitor = LiveMonitor()
+    data_foundation = _FakeBackfillDataFoundation(initial_count=0, synced_count=0, should_fail=True)
+    config = RunConfig(
+        mode=DashboardMode.BACKTEST,
+        symbol="BTCUSDT",
+        interval="1m",
+        lookback_candles=64,
+        backtest_candles=50,
+    )
+
+    available_candles = ensure_backtest_market_data(
+        cast(DataFoundationNode, data_foundation),
+        config=config,
+        monitor=monitor,
+    )
+
+    snapshot = monitor.snapshot()
+
+    assert available_candles == 0
+    assert snapshot.alerts
+    assert snapshot.alerts[0].source == "data_sync"
+    assert snapshot.alerts[0].severity == "warning"
 
 
 def test_execute_backtest_is_read_only_and_returns_summary(tmp_path: Path) -> None:

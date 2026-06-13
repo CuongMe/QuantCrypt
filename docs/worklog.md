@@ -176,3 +176,11 @@
 - Introduced a typed `StructuredRunnable` protocol in `quantcrypt/llm.py` so cached LangChain runnables are no longer stored as untyped `object`.
 - Removed the remaining Pylance issues around `runnable.invoke(...)` and the structured-output return type in the Ollama adapter.
 - Kept runtime behavior unchanged and re-ran the local test suite successfully.
+
+### Step 26: Backtest Historical Data Bootstrap
+
+- Fixed the dashboard backtest flow so it no longer assumes the local candle database is already populated.
+- Added a historical bootstrap step that attempts a REST backfill before backtest execution when the local store has too few candles.
+- Calculated the required candle count from both the lookback window and the requested number of backtest cycles.
+- Improved the failure path so the error now distinguishes between `no local candles yet` and `historical sync could not load enough data`.
+- Added tests for successful empty-store bootstrap and failed historical sync warning behavior.

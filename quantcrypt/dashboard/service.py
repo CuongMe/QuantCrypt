@@ -158,6 +158,107 @@ def sync_recent_market_data(
     )
 
 
+def required_backtest_candle_count(config: RunConfig) -> int:
+    return max(
+        config.lookback_candles + 2,
+        config.lookback_candles + config.backtest_candles + 1,
+    )
+
+
+def ensure_backtest_market_data(
+    data_foundation: DataFoundationNode,
+    *,
+    config: RunConfig,
+    monitor: LiveMonitor | None = None,
+) -> int:
+    required_candles = required_backtest_candle_count(config)
+    available_candles = data_foundation.store.count_candles(
+        symbol=config.symbol,
+        interval=config.interval,
+    )
+    if available_candles >= required_candles:
+        if monitor is not None:
+            monitor.set_component_status(
+                "data_sync",
+                status=ComponentHealthStatus.HEALTHY,
+                message=(
+                    f"Backtest history already available for {config.symbol} {config.interval}. "
+                    f"Found {available_candles} candles."
+                ),
+            )
+        return available_candles
+
+    if monitor is not None:
+        monitor.set_component_status(
+            "data_sync",
+            status=ComponentHealthStatus.RUNNING,
+            message=(
+                f"Backfilling historical market data for backtest on {config.symbol} {config.interval}. "
+                f"Need at least {required_candles} candles."
+            ),
+        )
+
+    try:
+        inserted_count = sync_recent_market_data(
+            data_foundation,
+            symbol=config.symbol,
+            interval=config.interval,
+            lookback_candles=required_candles,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to sync historical backtest data for %s %s.",
+            config.symbol,
+            config.interval,
+            exc_info=True,
+        )
+        available_candles = data_foundation.store.count_candles(
+            symbol=config.symbol,
+            interval=config.interval,
+        )
+        if monitor is not None:
+            message = (
+                f"Failed to sync historical backtest data for {config.symbol} {config.interval}. "
+                f"Only {available_candles} candles are available locally; need at least {required_candles}."
+            )
+            monitor.set_component_status(
+                "data_sync",
+                status=ComponentHealthStatus.WARNING,
+                message=message,
+            )
+            monitor.record_alert(
+                severity=AlertSeverity.WARNING,
+                source="data_sync",
+                message=message,
+                details={
+                    "symbol": config.symbol,
+                    "interval": config.interval,
+                    "available_candles": available_candles,
+                    "required_candles": required_candles,
+                },
+            )
+        return available_candles
+
+    available_candles = data_foundation.store.count_candles(
+        symbol=config.symbol,
+        interval=config.interval,
+    )
+    if monitor is not None:
+        monitor.set_component_status(
+            "data_sync",
+            status=(
+                ComponentHealthStatus.HEALTHY
+                if available_candles >= required_candles
+                else ComponentHealthStatus.WARNING
+            ),
+            message=(
+                f"Historical backtest sync completed for {config.symbol} {config.interval}. "
+                f"Inserted or refreshed {inserted_count} candles; local store now has {available_candles}."
+            ),
+        )
+    return available_candles
+
+
 def execute_monitor_cycle(
     *,
     data_foundation: DataFoundationNode,
@@ -487,12 +588,31 @@ class DashboardController:
         ai_engineering: AIEngineeringNode,
         supervisor: SupervisorNode,
     ) -> None:
+        self._update_snapshot(
+            last_updated_at=_utc_now_iso(),
+            status_message="Loading historical candles for backtest.",
+        )
+
         def on_progress(cycle_count: int, decision: SupervisorDecision) -> None:
             self._update_snapshot(
                 cycle_count=cycle_count,
                 latest_decision=decision,
                 last_updated_at=_utc_now_iso(),
                 status_message=f"Backtest processed {cycle_count} historical windows.",
+            )
+
+        available_candles = ensure_backtest_market_data(
+            data_foundation,
+            config=config,
+            monitor=self._runtime_factory.monitor,
+        )
+        required_candles = required_backtest_candle_count(config)
+        if available_candles < required_candles:
+            raise RuntimeError(
+                f"Backtest could not load enough candles for {config.symbol} {config.interval}. "
+                f"Needed at least {required_candles} candles for lookback {config.lookback_candles} and "
+                f"{config.backtest_candles} requested cycles, but found {available_candles} after attempting "
+                "historical sync. Check network access to Binance or backfill data first."
             )
 
         summary = execute_backtest(

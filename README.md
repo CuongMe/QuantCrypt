@@ -154,6 +154,7 @@ The current dashboard is a Streamlit control surface for the implemented archite
 Current behavior:
 
 - `Backtest` is read-only and does not persist reports or memory artifacts
+- `Backtest` attempts to bootstrap missing historical candles from Binance REST before it runs
 - `Paper Trading` persists supervisor reports and memory artifacts
 - `Live Trading` is still `demo account only` and does not place exchange orders
 - `Run` and `Stop` control the active dashboard execution loop
