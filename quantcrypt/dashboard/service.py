@@ -11,7 +11,7 @@ from typing import Callable
 from ..ai_engineering import AIEngineeringNode, DecisionReport
 from ..data_foundation import DataFoundationNode, OHLCVCandle
 from ..data_foundation.timeframes import INTERVAL_TO_MS
-from ..models import SupervisorDecision, TradeAction
+from ..models import PositionState, SupervisorDecision, TradeAction, TradingScope
 from ..observability import AlertSeverity, ComponentHealthStatus, LiveMonitor, LiveMonitorSnapshot
 from ..runtime import RuntimeFactory
 from ..supervisor import SupervisorNode
@@ -52,6 +52,7 @@ class BacktestResult:
     evaluation_open_time_ms: int
     next_open_time_ms: int
     final_action: str
+    position_state: str
     risk_level: str
     confidence: float
     market_return_pct: float
@@ -97,6 +98,7 @@ class DashboardSnapshot:
 class DashboardState:
     snapshot: DashboardSnapshot
     monitor_snapshot: LiveMonitorSnapshot
+    trading_scope: TradingScope
     available_candles: int
     latest_candle: OHLCVCandle | None
     recent_candles: list[OHLCVCandle]
@@ -114,6 +116,24 @@ class MonitorCycleResult:
 
 def _utc_now_iso() -> str:
     return datetime.now(tz=UTC).isoformat(timespec="seconds")
+
+
+def build_trading_scope(*, symbol: str) -> TradingScope:
+    return TradingScope(
+        exchange="binance",
+        asset_class="crypto",
+        market_type="spot",
+        monitored_symbol=symbol,
+        strategy_style="llm_supervised_long_flat",
+        allowed_actions=("buy", "sell", "hold"),
+        sell_behavior="exit long exposure and return to cash; no shorting",
+        supports_shorting=False,
+        routes_exchange_orders=False,
+        uses_market_orders=False,
+        uses_limit_orders=False,
+        uses_stop_loss=False,
+        uses_take_profit=False,
+    )
 
 
 def sync_recent_market_data(
@@ -248,6 +268,7 @@ def execute_backtest(
     trade_count = 0
     strategy_equity = 1.0
     market_equity = 1.0
+    current_position = PositionState.FLAT
     results: list[BacktestResult] = []
 
     for evaluation_index in range(evaluation_start_index, len(candles) - 1):
@@ -266,31 +287,35 @@ def execute_backtest(
         decision = supervisor.run(context, evidence=evidence)
 
         market_return_pct = (next_candle.close_price / window[-1].close_price) - 1.0
+        next_position = current_position
         if decision.final_action == TradeAction.BUY:
-            strategy_return_pct = market_return_pct
             buy_count += 1
+            next_position = PositionState.LONG
         elif decision.final_action == TradeAction.SELL:
-            strategy_return_pct = -market_return_pct
             sell_count += 1
+            next_position = PositionState.FLAT
         else:
-            strategy_return_pct = 0.0
             hold_count += 1
 
-        if decision.final_action != TradeAction.HOLD:
+        strategy_return_pct = market_return_pct if next_position == PositionState.LONG else 0.0
+
+        if decision.final_action in {TradeAction.BUY, TradeAction.SELL}:
+            approved_trade_count += 1
+        if next_position == PositionState.LONG:
             trade_count += 1
             if strategy_return_pct > 0:
                 winning_trade_count += 1
-        if decision.risk.approved:
-            approved_trade_count += 1
 
         strategy_equity *= 1.0 + strategy_return_pct
         market_equity *= 1.0 + market_return_pct
+        current_position = next_position
 
         results.append(
             BacktestResult(
                 evaluation_open_time_ms=window[-1].open_time_ms,
                 next_open_time_ms=next_candle.open_time_ms,
                 final_action=decision.final_action.value,
+                position_state=current_position.value,
                 risk_level=decision.risk.risk_level.value,
                 confidence=decision.trader.confidence,
                 market_return_pct=market_return_pct,
@@ -342,6 +367,7 @@ class DashboardController:
         return DashboardState(
             snapshot=self.snapshot(),
             monitor_snapshot=self._runtime_factory.monitor.snapshot(),
+            trading_scope=build_trading_scope(symbol=symbol),
             available_candles=data_foundation.store.count_candles(symbol=symbol, interval=interval),
             latest_candle=data_foundation.store.fetch_latest_candle(symbol=symbol, interval=interval),
             recent_candles=data_foundation.load_latest_clean_ohlcv(

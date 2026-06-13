@@ -153,3 +153,12 @@
 - Preserved the current orchestration order as `analyst -> researcher -> trader -> risk -> supervisor finalize`.
 - Updated the test suite to target the new structured-output and graph orchestration contract.
 - Verified the refactor with `17 passed` in the local pytest suite.
+
+### Step 23: Trading Scope Clarification And Spot Backtest Fix
+
+- Made the current trading scope explicit in code as `Binance spot`, `crypto only`, and `one symbol per active run`.
+- Added a dashboard-visible trading scope summary so the operator can see the exact execution constraints.
+- Corrected the backtest so `SELL` no longer behaves like an implicit short against spot candles.
+- Standardized current strategy behavior as `long/flat`: `BUY` enters or keeps long exposure, `SELL` exits to cash, and `HOLD` keeps the current position.
+- Marked market orders, limit orders, stop loss, take profit, and exchange order routing as `not implemented` in the current build.
+- Added regression tests for the spot-only execution semantics and trading-scope metadata.

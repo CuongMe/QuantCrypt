@@ -120,6 +120,7 @@ def _backtest_rows(summary) -> list[dict[str, object]]:
             "evaluation_time": _format_timestamp(result.evaluation_open_time_ms),
             "next_time": _format_timestamp(result.next_open_time_ms),
             "action": result.final_action,
+            "position_state": result.position_state,
             "risk": result.risk_level,
             "confidence": round(result.confidence, 3),
             "market_return_pct": round(result.market_return_pct * 100.0, 3),
@@ -219,6 +220,7 @@ def main() -> None:
         st.sidebar.number_input("Run Poll Seconds", min_value=5.0, max_value=300.0, value=15.0, step=5.0)
     )
     st.sidebar.caption("Paper Trading and Live Trading both use demo execution in the current build.")
+    st.sidebar.caption("The current build monitors one symbol per active run, using Binance spot market data only.")
 
     config = RunConfig(
         mode=mode,
@@ -302,6 +304,30 @@ def main() -> None:
             {"field": "Completed", "value": snapshot.last_completed_at or "n/a"},
         ]
         st.dataframe(pandas.DataFrame(state_rows), use_container_width=True, hide_index=True)
+
+        st.subheader("Trading Scope")
+        scope_rows = [
+            {"field": "Exchange", "value": state.trading_scope.exchange.title()},
+            {"field": "Asset Class", "value": state.trading_scope.asset_class.title()},
+            {"field": "Market Type", "value": state.trading_scope.market_type.title()},
+            {"field": "Monitored Symbol", "value": state.trading_scope.monitored_symbol},
+            {"field": "Strategy Style", "value": state.trading_scope.strategy_style},
+            {"field": "Actions", "value": ", ".join(action.upper() for action in state.trading_scope.allowed_actions)},
+            {"field": "SELL Meaning", "value": state.trading_scope.sell_behavior},
+            {"field": "Shorting", "value": "Supported" if state.trading_scope.supports_shorting else "Not supported"},
+            {
+                "field": "Order Routing",
+                "value": "Exchange order routing enabled"
+                if state.trading_scope.routes_exchange_orders
+                else "No exchange orders. Signal and demo mode only.",
+            },
+            {"field": "Market Orders", "value": "Implemented" if state.trading_scope.uses_market_orders else "Not implemented"},
+            {"field": "Limit Orders", "value": "Implemented" if state.trading_scope.uses_limit_orders else "Not implemented"},
+            {"field": "Stop Loss", "value": "Implemented" if state.trading_scope.uses_stop_loss else "Not implemented"},
+            {"field": "Take Profit", "value": "Implemented" if state.trading_scope.uses_take_profit else "Not implemented"},
+        ]
+        st.dataframe(pandas.DataFrame(scope_rows), use_container_width=True, hide_index=True)
+        st.caption("This is a crypto-only Binance spot strategy in the current build. Stock trading is not supported.")
 
         if snapshot.latest_decision is not None:
             st.subheader("Latest Supervisor Decision")
@@ -398,6 +424,9 @@ def main() -> None:
             st.warning("No candles are stored yet for this symbol and interval.")
         else:
             latest_candle_rows = [
+                {"field": "Exchange", "value": state.latest_candle.exchange},
+                {"field": "Market Type", "value": state.latest_candle.market_type},
+                {"field": "Symbol", "value": state.latest_candle.symbol},
                 {"field": "Open Time", "value": _format_timestamp(state.latest_candle.open_time_ms)},
                 {"field": "Close Time", "value": _format_timestamp(state.latest_candle.close_time_ms)},
                 {"field": "Open", "value": state.latest_candle.open_price},

@@ -23,6 +23,11 @@ class RiskLevel(StrEnum):
     HIGH = "high"
 
 
+class PositionState(StrEnum):
+    FLAT = "flat"
+    LONG = "long"
+
+
 class AnalysisItemPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -115,6 +120,23 @@ class RiskOutput:
     risk_level: RiskLevel
     approved: bool
     rationale: str
+
+
+@dataclass(slots=True, frozen=True)
+class TradingScope:
+    exchange: str
+    asset_class: str
+    market_type: str
+    monitored_symbol: str
+    strategy_style: str
+    allowed_actions: tuple[str, ...]
+    sell_behavior: str
+    supports_shorting: bool
+    routes_exchange_orders: bool
+    uses_market_orders: bool
+    uses_limit_orders: bool
+    uses_stop_loss: bool
+    uses_take_profit: bool
 
 
 @dataclass(slots=True)

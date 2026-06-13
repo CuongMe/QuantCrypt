@@ -18,10 +18,28 @@ QuantCrypt is a local-first multi-agent crypto trading system built around four 
 - The supervisor can run from SQL-backed market evidence instead of only synthetic inputs
 - The LLM boundary uses LangChain structured outputs with Pydantic validation
 - The orchestration layer uses LangGraph shared state instead of a custom loop
+- The current execution scope is `Binance spot` and `crypto only`
+- The current build monitors one symbol per active run, chosen from the dashboard
+- The strategy is `long/flat`: `BUY` enters or keeps long exposure, `SELL` exits to cash, and `HOLD` keeps the current position
 - `Backtest` is read-only and does not write reports or memories
 - `Paper Trading` persists reports and memory artifacts
 - `Live Trading` remains `demo account only`
 - Secrets must not be stored in tracked plaintext files
+
+## Current Trading Scope
+
+- Exchange: `Binance`
+- Asset class: `Crypto`
+- Market type: `Spot`
+- Monitored coins: one symbol per active run, for example `BTCUSDT` or `ETHUSDT`
+- Decision outputs: `buy`, `sell`, `hold`
+- `SELL` semantics: exit long exposure and go back to cash; no shorting in the current build
+- Market orders: not implemented
+- Limit orders: not implemented
+- Stop loss: not implemented
+- Take profit: not implemented
+- Live order routing: not implemented
+- Stock trading: not supported
 
 ## Local LLM Runtime
 

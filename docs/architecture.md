@@ -97,5 +97,8 @@ graph TD
 - `Live Trading` in the dashboard is still `demo account only`.
 - The `Live Monitor` view is the first observability surface and should show component health, agent activity, and critical alerts.
 - `Backtest` is read-only and must not write hypothetical decisions into the persistent memory store.
+- The current execution scope is `Binance spot` and `crypto only`, with one symbol monitored per active run.
+- The current strategy is `long/flat`, not long/short: `SELL` means reduce or exit long exposure rather than open a short.
+- Market orders, limit orders, stop loss, and take profit routing are not implemented yet.
 - Risk control must exist before live execution is allowed.
 - The architecture diagram should be added or updated whenever a new subsystem becomes real code.

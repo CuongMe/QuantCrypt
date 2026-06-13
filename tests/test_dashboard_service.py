@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from quantcrypt.ai_engineering.ai_node import AIEngineeringNode
-from quantcrypt.dashboard.service import DashboardMode, RunConfig, execute_backtest
+from quantcrypt.dashboard.service import DashboardMode, RunConfig, build_trading_scope, execute_backtest
 from quantcrypt.data_foundation.models import OHLCVCandle
 from quantcrypt.data_foundation.data_node import DataFoundationNode
 from quantcrypt.data_foundation.storage import SQLiteOHLCVStore
@@ -113,6 +113,83 @@ def test_execute_backtest_is_read_only_and_returns_summary(tmp_path: Path) -> No
     assert summary.hold_count == 0
     assert ai_node.store.count_decision_reports() == 0
     assert ai_node.store.count_memory_documents() == 0
+
+
+def test_execute_backtest_sell_is_exit_signal_not_short(tmp_path: Path) -> None:
+    data_foundation, db_path = _seed_data_foundation(tmp_path)
+    ai_node = AIEngineeringNode(
+        data_foundation=data_foundation,
+        db_path=db_path,
+        faiss_index_path=tmp_path / "memory.faiss",
+    )
+    supervisor = SupervisorNode(
+        llm=StubLLM(
+            [
+                {
+                    "items": [
+                        {"category": "fundamental", "score": -0.4, "summary": "soft fundamentals"},
+                        {"category": "sentiment", "score": -0.2, "summary": "weak sentiment"},
+                        {"category": "news", "score": 0.0, "summary": "no new catalysts"},
+                        {"category": "technical", "score": -0.7, "summary": "trend down"},
+                    ],
+                    "composite_score": -0.325,
+                },
+                {
+                    "bullish_points": ["oversold bounce possible"],
+                    "bearish_points": ["trend remains weak"],
+                    "conviction": -0.4,
+                },
+                {
+                    "preliminary_action": "sell",
+                    "confidence": 0.71,
+                    "rationale": "exit long exposure on continued weakness",
+                },
+                {
+                    "risk_level": "low",
+                    "approved": True,
+                    "rationale": "staying flat is acceptable",
+                },
+            ]
+            * 5
+        )
+    )
+
+    summary = execute_backtest(
+        data_foundation=data_foundation,
+        ai_engineering=ai_node,
+        supervisor=supervisor,
+        config=RunConfig(
+            mode=DashboardMode.BACKTEST,
+            symbol="BTCUSDT",
+            interval="1m",
+            lookback_candles=10,
+            backtest_candles=5,
+            memory_k=2,
+        ),
+    )
+
+    assert summary.total_cycles == 5
+    assert summary.buy_count == 0
+    assert summary.sell_count == 5
+    assert summary.hold_count == 0
+    assert summary.cumulative_strategy_return_pct == 0.0
+    assert all(result.position_state == "flat" for result in summary.results)
+
+
+def test_build_trading_scope_is_binance_spot_only() -> None:
+    scope = build_trading_scope(symbol="ETHUSDT")
+
+    assert scope.exchange == "binance"
+    assert scope.asset_class == "crypto"
+    assert scope.market_type == "spot"
+    assert scope.monitored_symbol == "ETHUSDT"
+    assert scope.allowed_actions == ("buy", "sell", "hold")
+    assert scope.sell_behavior.startswith("exit long exposure")
+    assert scope.supports_shorting is False
+    assert scope.routes_exchange_orders is False
+    assert scope.uses_market_orders is False
+    assert scope.uses_limit_orders is False
+    assert scope.uses_stop_loss is False
 
 
 def test_fetch_recent_decision_reports_returns_agent_payloads(tmp_path: Path) -> None:
