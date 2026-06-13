@@ -178,82 +178,12 @@ def _find_component_status(component_statuses, component_name: str) -> str:
     return "n/a"
 
 
-def main() -> None:
-    st.set_page_config(
-        page_title="QuantCrypt Dashboard",
-        page_icon="QC",
-        layout="wide",
-    )
-    _render_styles()
-
-    controller = get_dashboard_controller()
-
-    st.markdown(
-        """
-        <div class="qc-hero">
-            <div class="qc-kicker">QuantCrypt Control Deck</div>
-            <h1 class="qc-title">Supervisor-driven crypto agent dashboard</h1>
-            <div class="qc-subtitle">
-                Backtest historical signals, run paper trading loops, and stage live trading in demo mode on top of the current
-                Data Foundation, AI Engineering, and Supervisor architecture.
-            </div>
-            <div class="qc-note">Live Trading remains demo-account only in the current system. No exchange orders are placed from this dashboard.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.sidebar.header("Execution Config")
-    mode = DashboardMode(
-        st.sidebar.radio(
-            "Mode",
-            options=[mode.value for mode in DashboardMode],
-            format_func=lambda value: MODE_LABELS[DashboardMode(value)],
-        )
-    )
-    symbol = st.sidebar.text_input("Symbol", value="BTCUSDT").strip().upper() or "BTCUSDT"
-    interval = st.sidebar.selectbox("Interval", options=["1m", "5m", "15m", "1h", "4h", "1d"], index=0)
-    lookback_candles = int(st.sidebar.slider("Lookback Candles", min_value=16, max_value=256, value=64, step=8))
-    memory_k = int(st.sidebar.slider("Memory Retrieval", min_value=0, max_value=8, value=4, step=1))
-    backtest_candles = int(st.sidebar.number_input("Backtest Cycles", min_value=10, max_value=500, value=50, step=10))
-    poll_interval_seconds = float(
-        st.sidebar.number_input("Run Poll Seconds", min_value=5.0, max_value=300.0, value=15.0, step=5.0)
-    )
-    st.sidebar.caption("Paper Trading and Live Trading both use demo execution in the current build.")
-    st.sidebar.caption("The current build monitors one symbol per active run, using Binance spot market data only.")
-
-    config = RunConfig(
-        mode=mode,
-        symbol=symbol,
-        interval=interval,
-        lookback_candles=lookback_candles,
-        memory_k=memory_k,
-        backtest_candles=backtest_candles,
-        poll_interval_seconds=poll_interval_seconds,
-        demo_account=True,
-    )
-
-    action_col, stop_col, refresh_col, mode_col = st.columns([1, 1, 1, 2])
-    with action_col:
-        run_clicked = st.button("Run", type="primary", use_container_width=True)
-    with stop_col:
-        stop_clicked = st.button("Stop", use_container_width=True)
-    with refresh_col:
-        refresh_clicked = st.button("Refresh", use_container_width=True)
-    with mode_col:
-        st.markdown(f"**Mode:** `{MODE_LABELS[mode]}`")
-
-    if run_clicked:
-        if controller.start(config):
-            st.success(f"{MODE_LABELS[mode]} started.")
-        else:
-            st.warning("A run is already active. Stop it before starting a new one.")
-    if stop_clicked:
-        controller.stop()
-        st.info("Stop requested.")
-    if refresh_clicked:
-        st.rerun()
-
+def _render_dashboard_state(
+    *,
+    controller: DashboardController,
+    symbol: str,
+    interval: str,
+) -> None:
     state = controller.build_state(symbol=symbol, interval=interval)
     snapshot = state.snapshot
     monitor_snapshot = state.monitor_snapshot
@@ -303,7 +233,7 @@ def main() -> None:
             {"field": "Updated", "value": snapshot.last_updated_at or "n/a"},
             {"field": "Completed", "value": snapshot.last_completed_at or "n/a"},
         ]
-        st.dataframe(pandas.DataFrame(state_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pandas.DataFrame(state_rows), width="stretch", hide_index=True)
 
         st.subheader("Trading Scope")
         scope_rows = [
@@ -326,7 +256,7 @@ def main() -> None:
             {"field": "Stop Loss", "value": "Implemented" if state.trading_scope.uses_stop_loss else "Not implemented"},
             {"field": "Take Profit", "value": "Implemented" if state.trading_scope.uses_take_profit else "Not implemented"},
         ]
-        st.dataframe(pandas.DataFrame(scope_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pandas.DataFrame(scope_rows), width="stretch", hide_index=True)
         st.caption("This is a crypto-only Binance spot strategy in the current build. Stock trading is not supported.")
 
         if snapshot.latest_decision is not None:
@@ -351,7 +281,7 @@ def main() -> None:
         st.subheader("Component Health")
         st.dataframe(
             pandas.DataFrame(_component_rows(monitor_snapshot.component_statuses)),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -366,7 +296,7 @@ def main() -> None:
         else:
             st.dataframe(
                 pandas.DataFrame(_component_rows(active_components)),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -376,7 +306,7 @@ def main() -> None:
         else:
             st.dataframe(
                 pandas.DataFrame(_alert_rows(monitor_snapshot.alerts)),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -386,7 +316,7 @@ def main() -> None:
         else:
             st.dataframe(
                 pandas.DataFrame(_agent_log_rows(monitor_snapshot.agent_logs)),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
             )
 
@@ -409,14 +339,14 @@ def main() -> None:
             )
             rows = _backtest_rows(summary)
             if rows:
-                st.dataframe(pandas.DataFrame(rows), use_container_width=True, hide_index=True)
+                st.dataframe(pandas.DataFrame(rows), width="stretch", hide_index=True)
 
     with reports_tab:
         st.subheader("Recent Persisted Reports")
         if not state.recent_reports:
             st.caption("No persisted paper or live demo reports yet for this symbol and interval.")
         else:
-            st.dataframe(pandas.DataFrame(_report_rows(state.recent_reports)), use_container_width=True, hide_index=True)
+            st.dataframe(pandas.DataFrame(_report_rows(state.recent_reports)), width="stretch", hide_index=True)
 
     with data_tab:
         st.subheader("Data Foundation Status")
@@ -436,7 +366,7 @@ def main() -> None:
                 {"field": "Volume", "value": state.latest_candle.volume},
                 {"field": "Source", "value": state.latest_candle.source},
             ]
-            st.dataframe(pandas.DataFrame(latest_candle_rows), use_container_width=True, hide_index=True)
+            st.dataframe(pandas.DataFrame(latest_candle_rows), width="stretch", hide_index=True)
 
         if state.recent_candles:
             chart_frame = pandas.DataFrame(
@@ -446,8 +376,102 @@ def main() -> None:
                     "volume": [candle.volume for candle in state.recent_candles],
                 }
             ).set_index("timestamp")
-            st.line_chart(chart_frame[["close"]], use_container_width=True)
-            st.bar_chart(chart_frame[["volume"]], use_container_width=True)
+            st.line_chart(chart_frame[["close"]], width="stretch")
+            st.bar_chart(chart_frame[["volume"]], width="stretch")
+
+
+def main() -> None:
+    st.set_page_config(
+        page_title="QuantCrypt Dashboard",
+        page_icon="QC",
+        layout="wide",
+    )
+    _render_styles()
+
+    controller = get_dashboard_controller()
+
+    st.markdown(
+        """
+        <div class="qc-hero">
+            <div class="qc-kicker">QuantCrypt Control Deck</div>
+            <h1 class="qc-title">Supervisor-driven crypto agent dashboard</h1>
+            <div class="qc-subtitle">
+                Backtest historical signals, run paper trading loops, and stage live trading in demo mode on top of the current
+                Data Foundation, AI Engineering, and Supervisor architecture.
+            </div>
+            <div class="qc-note">Live Trading remains demo-account only in the current system. No exchange orders are placed from this dashboard.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.sidebar.header("Execution Config")
+    mode = DashboardMode(
+        st.sidebar.radio(
+            "Mode",
+            options=[mode.value for mode in DashboardMode],
+            format_func=lambda value: MODE_LABELS[DashboardMode(value)],
+        )
+    )
+    symbol = st.sidebar.text_input("Symbol", value="BTCUSDT").strip().upper() or "BTCUSDT"
+    interval = st.sidebar.selectbox("Interval", options=["1m", "5m", "15m", "1h", "4h", "1d"], index=0)
+    lookback_candles = int(st.sidebar.slider("Lookback Candles", min_value=16, max_value=256, value=64, step=8))
+    memory_k = int(st.sidebar.slider("Memory Retrieval", min_value=0, max_value=8, value=4, step=1))
+    backtest_candles = int(st.sidebar.number_input("Backtest Cycles", min_value=10, max_value=500, value=50, step=10))
+    poll_interval_seconds = float(
+        st.sidebar.number_input("Run Poll Seconds", min_value=5.0, max_value=300.0, value=15.0, step=5.0)
+    )
+    auto_refresh_enabled = st.sidebar.toggle("Auto Refresh", value=True)
+    auto_refresh_seconds = float(
+        st.sidebar.slider("Refresh Seconds", min_value=1.0, max_value=10.0, value=2.0, step=0.5)
+    )
+    st.sidebar.caption("Paper Trading and Live Trading both use demo execution in the current build.")
+    st.sidebar.caption("The current build monitors one symbol per active run, using Binance spot market data only.")
+
+    config = RunConfig(
+        mode=mode,
+        symbol=symbol,
+        interval=interval,
+        lookback_candles=lookback_candles,
+        memory_k=memory_k,
+        backtest_candles=backtest_candles,
+        poll_interval_seconds=poll_interval_seconds,
+        demo_account=True,
+    )
+
+    action_col, stop_col, refresh_col, mode_col = st.columns([1, 1, 1, 2])
+    with action_col:
+        run_clicked = st.button("Run", type="primary", width="stretch")
+    with stop_col:
+        stop_clicked = st.button("Stop", width="stretch")
+    with refresh_col:
+        refresh_clicked = st.button("Refresh", width="stretch")
+    with mode_col:
+        refresh_mode = "Live" if auto_refresh_enabled else "Manual"
+        st.markdown(f"**Mode:** `{MODE_LABELS[mode]}`  \n**Refresh:** `{refresh_mode}`")
+
+    if run_clicked:
+        if controller.start(config):
+            st.success(f"{MODE_LABELS[mode]} started.")
+        else:
+            st.warning("A run is already active. Stop it before starting a new one.")
+    if stop_clicked:
+        controller.stop()
+        st.info("Stop requested.")
+    if refresh_clicked:
+        st.rerun()
+
+    refresh_interval = f"{auto_refresh_seconds}s" if auto_refresh_enabled else None
+
+    @st.fragment(run_every=refresh_interval)
+    def render_live_dashboard() -> None:
+        _render_dashboard_state(
+            controller=controller,
+            symbol=symbol,
+            interval=interval,
+        )
+
+    render_live_dashboard()
 
 
 if __name__ == "__main__":
