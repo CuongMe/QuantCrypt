@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Protocol, TypeVar
+from typing import Protocol, Sequence, TypeVar, cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
@@ -17,6 +17,11 @@ load_local_env()
 
 logger = logging.getLogger(__name__)
 StructuredOutputT = TypeVar("StructuredOutputT", bound=BaseModel)
+
+
+class StructuredRunnable(Protocol[StructuredOutputT]):
+    def invoke(self, input: Sequence[SystemMessage | HumanMessage]) -> StructuredOutputT:
+        ...
 
 
 class ChatModel(Protocol):
@@ -37,7 +42,11 @@ class OllamaChatModel:
     timeout_seconds: float = 120.0
     temperature: float = 0.2
     monitor: LiveMonitor | None = None
-    _structured_runnables: dict[type[BaseModel], object] = field(default_factory=dict, init=False, repr=False)
+    _structured_runnables: dict[type[BaseModel], StructuredRunnable[BaseModel]] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
 
     @classmethod
     def from_env(cls) -> "OllamaChatModel":
@@ -104,12 +113,15 @@ class OllamaChatModel:
     def _get_structured_runnable(self, output_schema: type[StructuredOutputT]):
         runnable = self._structured_runnables.get(output_schema)
         if runnable is None:
-            runnable = self._build_chat_model().with_structured_output(
-                output_schema,
-                method="json_schema",
+            runnable = cast(
+                StructuredRunnable[BaseModel],
+                self._build_chat_model().with_structured_output(
+                    output_schema,
+                    method="json_schema",
+                ),
             )
             self._structured_runnables[output_schema] = runnable
-        return runnable
+        return cast(StructuredRunnable[StructuredOutputT], runnable)
 
     def _build_chat_model(self) -> ChatOllama:
         logger.debug(

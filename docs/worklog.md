@@ -169,3 +169,10 @@
 - Replaced unsafe optional `TypedDict` indexing with explicit required-state helpers for analyst, researcher, trader, risk, final action, and explanation outputs.
 - Removed the Pylance `reportTypedDictNotRequiredAccess` warnings in `quantcrypt/supervisor.py` without weakening the graph typing model.
 - Re-ran the local test suite after the change and kept it green.
+
+### Step 25: Pylance Argument And Runnable Typing Cleanup
+
+- Added an explicit cast for the LangGraph `invoke` result so `final_state` is treated as `SupervisorGraphState` at the supervisor boundary.
+- Introduced a typed `StructuredRunnable` protocol in `quantcrypt/llm.py` so cached LangChain runnables are no longer stored as untyped `object`.
+- Removed the remaining Pylance issues around `runnable.invoke(...)` and the structured-output return type in the Ollama adapter.
+- Kept runtime behavior unchanged and re-ran the local test suite successfully.

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from operator import add
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from langgraph.graph import END, START, StateGraph
 from typing_extensions import Annotated, TypedDict
@@ -83,18 +83,20 @@ class SupervisorNode:
             )
 
         try:
-            final_state = self._graph.invoke(
-                {
-                    "context": context,
-                    "evidence": evidence,
-                    "analyst_output": None,
-                    "researcher_output": None,
-                    "trader_output": None,
-                    "risk_output": None,
-                    "final_action": None,
-                    "explanation": None,
-                    "trace": [],
-                }
+            initial_state: SupervisorGraphState = {
+                "context": context,
+                "evidence": evidence,
+                "analyst_output": None,
+                "researcher_output": None,
+                "trader_output": None,
+                "risk_output": None,
+                "final_action": None,
+                "explanation": None,
+                "trace": [],
+            }
+            final_state = cast(
+                SupervisorGraphState,
+                self._graph.invoke(initial_state),
             )
         except Exception as exc:
             if self.monitor is not None:
