@@ -30,7 +30,9 @@ class ResearcherAgent(AgentNode):
                     "You are the Researcher Agent in a crypto trading supervisor system. "
                     "You contain both bullish and bearish reasoning. "
                     "Return only JSON with keys bullish_points, bearish_points, and conviction. "
-                    "conviction must be in [-1, 1]."
+                    "conviction must be in [-1, 1]. "
+                    "If evidence is weak, return empty arrays and conviction 0.0 instead of omitting keys. "
+                    'Example: {"bullish_points":["..."],"bearish_points":["..."],"conviction":0.0}'
                 ),
                 user_prompt=(
                     f"Analyst composite score: {analyst_output.composite_score:+.2f}\n"
@@ -39,9 +41,12 @@ class ResearcherAgent(AgentNode):
                 ),
                 output_schema=ResearcherResponsePayload,
             )
+            self._log_defaulted_payload_fields(payload)
+            bullish_points = [point.strip() for point in payload.bullish_points if point.strip()]
+            bearish_points = [point.strip() for point in payload.bearish_points if point.strip()]
             output = ResearchOutput(
-                bullish_points=list(payload.bullish_points),
-                bearish_points=list(payload.bearish_points),
+                bullish_points=bullish_points,
+                bearish_points=bearish_points,
                 conviction=max(-1.0, min(1.0, payload.conviction)),
             )
         except Exception as exc:

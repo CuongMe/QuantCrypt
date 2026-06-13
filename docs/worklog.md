@@ -184,3 +184,11 @@
 - Calculated the required candle count from both the lookback window and the requested number of backtest cycles.
 - Improved the failure path so the error now distinguishes between `no local candles yet` and `historical sync could not load enough data`.
 - Added tests for successful empty-store bootstrap and failed historical sync warning behavior.
+
+### Step 27: Structured Output Recovery For Local Ollama
+
+- Hardened the LangChain Ollama adapter so a malformed structured payload now triggers a retry instead of immediately aborting the dashboard run.
+- Added safe schema defaults for incomplete LLM payloads so missing non-critical fields degrade to neutral or blocked behavior instead of crashing execution.
+- Added agent-level logging when the model omits fields and QuantCrypt applies safe defaults.
+- Sanitized researcher bullish and bearish lists to remove blank items from partial model responses.
+- Added regression tests for structured-output retry behavior and for incomplete researcher payloads during supervisor execution.

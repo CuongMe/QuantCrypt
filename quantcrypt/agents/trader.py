@@ -40,9 +40,10 @@ class TraderAgent(AgentNode):
                 ),
                 output_schema=TraderResponsePayload,
             )
+            self._log_defaulted_payload_fields(payload)
             action = TradeAction(payload.preliminary_action.lower())
             confidence = max(0.0, min(1.0, payload.confidence))
-            rationale = payload.rationale
+            rationale = payload.rationale or "Trader model returned incomplete rationale."
             output = TraderOutput(
                 preliminary_action=action,
                 confidence=confidence,

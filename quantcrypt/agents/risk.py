@@ -42,10 +42,11 @@ class RiskManagementAgent(AgentNode):
                 ),
                 output_schema=RiskResponsePayload,
             )
+            self._log_defaulted_payload_fields(payload)
             output = RiskOutput(
                 risk_level=RiskLevel(payload.risk_level.lower()),
                 approved=bool(payload.approved),
-                rationale=payload.rationale,
+                rationale=payload.rationale or "Risk model returned incomplete rationale.",
             )
         except Exception as exc:
             self._log_failed(f"Risk evaluation failed: {exc}")

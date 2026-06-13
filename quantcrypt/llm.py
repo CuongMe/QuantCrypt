@@ -41,6 +41,7 @@ class OllamaChatModel:
     base_url: str = "http://localhost:11434"
     timeout_seconds: float = 120.0
     temperature: float = 0.2
+    max_structured_attempts: int = 2
     monitor: LiveMonitor | None = None
     _structured_runnables: dict[type[BaseModel], StructuredRunnable[BaseModel]] = field(
         default_factory=dict,
@@ -54,6 +55,7 @@ class OllamaChatModel:
             model=os.getenv("OLLAMA_MODEL", "gemma4:12b"),
             base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
             timeout_seconds=float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120")),
+            max_structured_attempts=max(1, int(os.getenv("OLLAMA_STRUCTURED_ATTEMPTS", "2"))),
         )
 
     def invoke_structured(
@@ -71,14 +73,44 @@ class OllamaChatModel:
             )
 
         runnable = self._get_structured_runnable(output_schema)
-        messages = [
+        base_messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_prompt),
         ]
+        parsed_payload: StructuredOutputT | None = None
+        last_exception: Exception | None = None
 
-        try:
-            parsed_payload = runnable.invoke(messages)
-        except Exception as exc:
+        for attempt_index in range(self.max_structured_attempts):
+            messages = list(base_messages)
+            if attempt_index > 0 and last_exception is not None:
+                messages.append(
+                    HumanMessage(
+                        content=(
+                            f"The previous response could not be parsed into {output_schema.__name__}. "
+                            "Return a complete valid JSON object with every required field present exactly once, "
+                            "and do not include prose or markdown. "
+                            f"Previous parsing error: {last_exception}"
+                        )
+                    )
+                )
+            try:
+                parsed_payload = runnable.invoke(messages)
+                break
+            except Exception as exc:
+                last_exception = exc
+                logger.warning(
+                    "Structured Ollama invocation attempt %s/%s failed for model '%s' and schema '%s': %s",
+                    attempt_index + 1,
+                    self.max_structured_attempts,
+                    self.model,
+                    output_schema.__name__,
+                    exc,
+                )
+                if attempt_index + 1 < self.max_structured_attempts:
+                    continue
+
+        if parsed_payload is None:
+            exc = last_exception or RuntimeError("Unknown structured output failure.")
             message = (
                 f"Failed to invoke Ollama at {self.base_url.rstrip('/')}/api/chat "
                 f"for model '{self.model}': {exc}"

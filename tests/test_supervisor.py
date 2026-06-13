@@ -233,3 +233,41 @@ def test_supervisor_emits_agent_activity_logs() -> None:
     assert {"supervisor", "analyst", "researcher", "trader", "risk"} <= agent_names
     assert any(entry.agent_name == "analyst" and entry.phase == "started" for entry in snapshot.agent_logs)
     assert any(entry.agent_name == "risk" and entry.phase == "completed" for entry in snapshot.agent_logs)
+
+
+def test_supervisor_handles_incomplete_researcher_payload_without_crashing() -> None:
+    supervisor = SupervisorNode(
+        llm=StubLLM(
+            [
+                {
+                    "items": [
+                        {"category": "fundamental", "score": 0.2, "summary": "stable fundamentals"},
+                        {"category": "sentiment", "score": 0.1, "summary": "slightly positive sentiment"},
+                        {"category": "news", "score": 0.0, "summary": "quiet news flow"},
+                        {"category": "technical", "score": 0.3, "summary": "modest uptrend"},
+                    ],
+                    "composite_score": 0.15,
+                },
+                {
+                    "bullish_points": ["technical signal is mildly positive", ""],
+                },
+                {
+                    "preliminary_action": "hold",
+                    "confidence": 0.41,
+                    "rationale": "research output is incomplete so stay neutral",
+                },
+                {
+                    "risk_level": "medium",
+                    "approved": True,
+                    "rationale": "no live order is being sent",
+                },
+            ]
+        )
+    )
+
+    decision = supervisor.run(MarketContext(symbol="BTCUSDT", technical_signal=0.3))
+
+    assert decision.researcher.bullish_points == ["technical signal is mildly positive"]
+    assert decision.researcher.bearish_points == []
+    assert decision.researcher.conviction == 0.0
+    assert decision.final_action == TradeAction.HOLD

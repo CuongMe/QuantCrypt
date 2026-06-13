@@ -39,32 +39,41 @@ class AnalysisItemPayload(BaseModel):
 class AnalystResponsePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    items: list[AnalysisItemPayload] = Field(description="Exactly four category assessments.")
-    composite_score: float = Field(description="Composite analyst score in the range [-1, 1].")
+    items: list[AnalysisItemPayload] = Field(
+        default_factory=list,
+        description="Exactly four category assessments.",
+    )
+    composite_score: float = Field(default=0.0, description="Composite analyst score in the range [-1, 1].")
 
 
 class ResearcherResponsePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    bullish_points: list[str] = Field(description="Bullish arguments supporting the thesis.")
-    bearish_points: list[str] = Field(description="Bearish arguments challenging the thesis.")
-    conviction: float = Field(description="Balanced conviction score in the range [-1, 1].")
+    bullish_points: list[str] = Field(default_factory=list, description="Bullish arguments supporting the thesis.")
+    bearish_points: list[str] = Field(default_factory=list, description="Bearish arguments challenging the thesis.")
+    conviction: float = Field(default=0.0, description="Balanced conviction score in the range [-1, 1].")
 
 
 class TraderResponsePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    preliminary_action: Literal["buy", "sell", "hold"] = Field(description="Trader's preliminary action.")
-    confidence: float = Field(description="Confidence score in the range [0, 1].")
-    rationale: str = Field(description="Short explanation for the preliminary action.")
+    preliminary_action: Literal["buy", "sell", "hold"] = Field(
+        default="hold",
+        description="Trader's preliminary action.",
+    )
+    confidence: float = Field(default=0.0, description="Confidence score in the range [0, 1].")
+    rationale: str = Field(default="", description="Short explanation for the preliminary action.")
 
 
 class RiskResponsePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    risk_level: Literal["low", "medium", "high"] = Field(description="Risk classification for the proposal.")
-    approved: bool = Field(description="Whether the trade is approved by risk management.")
-    rationale: str = Field(description="Short explanation for the risk verdict.")
+    risk_level: Literal["low", "medium", "high"] = Field(
+        default="high",
+        description="Risk classification for the proposal.",
+    )
+    approved: bool = Field(default=False, description="Whether the trade is approved by risk management.")
+    rationale: str = Field(default="", description="Short explanation for the risk verdict.")
 
 
 @dataclass(slots=True)

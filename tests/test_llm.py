@@ -13,13 +13,19 @@ class _SamplePayload(BaseModel):
 
 
 class _FakeRunnable:
-    def __init__(self, response: BaseModel | Exception) -> None:
-        self._response = response
+    def __init__(self, response: BaseModel | Exception | list[BaseModel | Exception]) -> None:
+        if isinstance(response, list):
+            self._responses = list(response)
+        else:
+            self._responses = [response]
 
     def invoke(self, messages):
-        if isinstance(self._response, Exception):
-            raise self._response
-        return self._response
+        if not self._responses:
+            raise AssertionError("No more fake runnable responses configured")
+        response = self._responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 def test_ollama_invoke_structured_returns_validated_payload(monkeypatch) -> None:
@@ -53,6 +59,28 @@ def test_ollama_invoke_structured_wraps_validation_failure(monkeypatch) -> None:
             user_prompt="user",
             output_schema=_SamplePayload,
         )
+
+
+def test_ollama_invoke_structured_retries_after_parse_failure(monkeypatch) -> None:
+    model = OllamaChatModel(model="gemma4:12b", base_url="http://localhost:11434", max_structured_attempts=2)
+    monkeypatch.setattr(
+        OllamaChatModel,
+        "_get_structured_runnable",
+        lambda self, output_schema: _FakeRunnable(
+            [
+                ValueError("missing required fields"),
+                _SamplePayload(action="hold", confidence=0.4),
+            ]
+        ),
+    )
+
+    response = model.invoke_structured(
+        system_prompt="system",
+        user_prompt="user",
+        output_schema=_SamplePayload,
+    )
+
+    assert response == _SamplePayload(action="hold", confidence=0.4)
 
 
 def test_ollama_connection_failure_records_critical_alert(monkeypatch) -> None:
