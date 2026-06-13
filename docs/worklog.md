@@ -162,3 +162,10 @@
 - Standardized current strategy behavior as `long/flat`: `BUY` enters or keeps long exposure, `SELL` exits to cash, and `HOLD` keeps the current position.
 - Marked market orders, limit orders, stop loss, take profit, and exchange order routing as `not implemented` in the current build.
 - Added regression tests for the spot-only execution semantics and trading-scope metadata.
+
+### Step 24: Supervisor Graph Type-Safety Fix
+
+- Reworked the LangGraph supervisor state typing so the runtime state is fully declared and node updates remain partial.
+- Replaced unsafe optional `TypedDict` indexing with explicit required-state helpers for analyst, researcher, trader, risk, final action, and explanation outputs.
+- Removed the Pylance `reportTypedDictNotRequiredAccess` warnings in `quantcrypt/supervisor.py` without weakening the graph typing model.
+- Re-ran the local test suite after the change and kept it green.

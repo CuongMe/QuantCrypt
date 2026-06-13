@@ -25,7 +25,19 @@ if TYPE_CHECKING:
     from .ai_engineering.reports import DecisionReport
 
 
-class SupervisorGraphState(TypedDict, total=False):
+class SupervisorGraphState(TypedDict):
+    context: MarketContext
+    evidence: EvidenceBundle | None
+    analyst_output: AnalystOutput | None
+    researcher_output: ResearchOutput | None
+    trader_output: TraderOutput | None
+    risk_output: RiskOutput | None
+    final_action: TradeAction | None
+    explanation: str | None
+    trace: Annotated[list[str], add]
+
+
+class SupervisorGraphUpdate(TypedDict, total=False):
     context: MarketContext
     evidence: EvidenceBundle | None
     analyst_output: AnalystOutput
@@ -75,6 +87,12 @@ class SupervisorNode:
                 {
                     "context": context,
                     "evidence": evidence,
+                    "analyst_output": None,
+                    "researcher_output": None,
+                    "trader_output": None,
+                    "risk_output": None,
+                    "final_action": None,
+                    "explanation": None,
                     "trace": [],
                 }
             )
@@ -90,13 +108,13 @@ class SupervisorNode:
 
         decision = SupervisorDecision(
             context=context,
-            analyst=final_state["analyst_output"],
-            researcher=final_state["researcher_output"],
-            trader=final_state["trader_output"],
-            risk=final_state["risk_output"],
-            final_action=final_state["final_action"],
-            explanation=final_state["explanation"],
-            trace=list(final_state.get("trace", [])),
+            analyst=self._require_analyst_output(final_state),
+            researcher=self._require_researcher_output(final_state),
+            trader=self._require_trader_output(final_state),
+            risk=self._require_risk_output(final_state),
+            final_action=self._require_final_action(final_state),
+            explanation=self._require_explanation(final_state),
+            trace=list(final_state["trace"]),
             evidence_summary=evidence.report_summary if evidence is not None else "",
             retrieved_memory_count=len(evidence.retrieved_memories) if evidence is not None else 0,
         )
@@ -130,50 +148,52 @@ class SupervisorNode:
         graph.add_edge("supervisor_finalize", END)
         return graph.compile()
 
-    def _analyst_node(self, state: SupervisorGraphState) -> SupervisorGraphState:
+    def _analyst_node(self, state: SupervisorGraphState) -> SupervisorGraphUpdate:
         return {
             "analyst_output": self.analyst.run(
                 state["context"],
-                evidence=state.get("evidence"),
+                evidence=state["evidence"],
             ),
             "trace": [self.analyst.name],
         }
 
-    def _researcher_node(self, state: SupervisorGraphState) -> SupervisorGraphState:
+    def _researcher_node(self, state: SupervisorGraphState) -> SupervisorGraphUpdate:
         return {
             "researcher_output": self.researcher.run(
-                state["analyst_output"],
-                evidence=state.get("evidence"),
+                self._require_analyst_output(state),
+                evidence=state["evidence"],
             ),
             "trace": [self.researcher.name],
         }
 
-    def _trader_node(self, state: SupervisorGraphState) -> SupervisorGraphState:
+    def _trader_node(self, state: SupervisorGraphState) -> SupervisorGraphUpdate:
         return {
             "trader_output": self.trader.run(
-                state["analyst_output"],
-                state["researcher_output"],
-                evidence=state.get("evidence"),
+                self._require_analyst_output(state),
+                self._require_researcher_output(state),
+                evidence=state["evidence"],
             ),
             "trace": [self.trader.name],
         }
 
-    def _risk_node(self, state: SupervisorGraphState) -> SupervisorGraphState:
+    def _risk_node(self, state: SupervisorGraphState) -> SupervisorGraphUpdate:
         return {
             "risk_output": self.risk.run(
                 state["context"],
-                state["trader_output"],
-                evidence=state.get("evidence"),
+                self._require_trader_output(state),
+                evidence=state["evidence"],
             ),
             "trace": [self.risk.name],
         }
 
-    def _finalize_node(self, state: SupervisorGraphState) -> SupervisorGraphState:
-        final_action = self._finalize(state["trader_output"].preliminary_action, state["risk_output"].approved)
+    def _finalize_node(self, state: SupervisorGraphState) -> SupervisorGraphUpdate:
+        trader_output = self._require_trader_output(state)
+        risk_output = self._require_risk_output(state)
+        final_action = self._finalize(trader_output.preliminary_action, risk_output.approved)
         explanation = (
             f"Supervisor finalized {final_action.value} after "
-            f"{state['trader_output'].preliminary_action.value} from trader and "
-            f"{state['risk_output'].risk_level.value} risk review"
+            f"{trader_output.preliminary_action.value} from trader and "
+            f"{risk_output.risk_level.value} risk review"
         )
         return {
             "final_action": final_action,
@@ -185,6 +205,48 @@ class SupervisorNode:
         if approved:
             return preliminary_action
         return TradeAction.HOLD
+
+    @staticmethod
+    def _require_analyst_output(state: SupervisorGraphState) -> AnalystOutput:
+        analyst_output = state["analyst_output"]
+        if analyst_output is None:
+            raise RuntimeError("Supervisor graph is missing analyst output.")
+        return analyst_output
+
+    @staticmethod
+    def _require_researcher_output(state: SupervisorGraphState) -> ResearchOutput:
+        researcher_output = state["researcher_output"]
+        if researcher_output is None:
+            raise RuntimeError("Supervisor graph is missing researcher output.")
+        return researcher_output
+
+    @staticmethod
+    def _require_trader_output(state: SupervisorGraphState) -> TraderOutput:
+        trader_output = state["trader_output"]
+        if trader_output is None:
+            raise RuntimeError("Supervisor graph is missing trader output.")
+        return trader_output
+
+    @staticmethod
+    def _require_risk_output(state: SupervisorGraphState) -> RiskOutput:
+        risk_output = state["risk_output"]
+        if risk_output is None:
+            raise RuntimeError("Supervisor graph is missing risk output.")
+        return risk_output
+
+    @staticmethod
+    def _require_final_action(state: SupervisorGraphState) -> TradeAction:
+        final_action = state["final_action"]
+        if final_action is None:
+            raise RuntimeError("Supervisor graph is missing final action.")
+        return final_action
+
+    @staticmethod
+    def _require_explanation(state: SupervisorGraphState) -> str:
+        explanation = state["explanation"]
+        if explanation is None:
+            raise RuntimeError("Supervisor graph is missing explanation.")
+        return explanation
 
     def run_for_symbol(
         self,
